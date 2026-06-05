@@ -12,7 +12,7 @@ export const name = "monetary-extra";
 
 export const inject = {
   required: ["database", "monetary"],
-  optional: ["monetaryBank"],
+  optional: ["monetaryBank", "puppeteer"],
 };
 
 const logger = new Logger("monetary-extra");
@@ -59,6 +59,9 @@ declare module "koishi" {
         currency: string,
         amount: number,
       ): Promise<{ success: boolean; error?: string }>;
+    };
+    puppeteer?: {
+      page(): Promise<any>;
     };
   }
 }

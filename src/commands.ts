@@ -1,4 +1,4 @@
-import type { Context, Logger, Session } from 'koishi'
+import type { Context, Logger, Session } from "koishi";
 import {
   computeCreditScores,
   getChannelConfig,
@@ -6,163 +6,232 @@ import {
   isMoreThanOneDayAgo,
   type ConfigInput,
   type ResolvedConfig,
-} from './core'
-import { costWithBank, hasTables, type MonetaryLikeContext } from './services'
+} from "./core";
+import { costWithBank, hasTables, type MonetaryLikeContext } from "./services";
+import { renderCreditImage } from "./render";
 
 interface CommandDeps {
-  ctx: Context
-  config: ConfigInput
-  logger: Logger
+  ctx: Context;
+  config: ConfigInput;
+  logger: Logger;
 }
 
 interface JrysRecord {
-  id: number
-  name: string
-  time: Date
-  exp: number
-  signCount: number
+  id: number;
+  name: string;
+  time: Date;
+  exp: number;
+  signCount: number;
 }
 
 interface CreditData {
-  candidates: string[]
-  bankMetrics: Map<string, number>
-  signMetrics: Map<string, number>
-  biases: Map<string, number>
-  names: Map<string, string>
+  candidates: string[];
+  bankMetrics: Map<string, number>;
+  signMetrics: Map<string, number>;
+  biases: Map<string, number>;
+  names: Map<string, string>;
 }
 
-function getSessionUid(session: Session<'id'>): number | null {
-  const uid = Number(session.user?.id)
-  return Number.isFinite(uid) ? uid : null
+function getSessionUid(session: Session<"id">): number | null {
+  const uid = Number(session.user?.id);
+  return Number.isFinite(uid) ? uid : null;
 }
 
-function getSessionConfig(session: Session, config: ConfigInput): ResolvedConfig {
-  return getChannelConfig(config, session.channelId)
+function getSessionConfig(
+  session: Session,
+  config: ConfigInput,
+): ResolvedConfig {
+  return getChannelConfig(config, session.channelId);
 }
 
 function missingJrysMessage() {
-  return '缺少 jrys 数据表，请确认 koishi-plugin-jrys-fix 已启用并完成过签到。'
+  return "缺少 jrys 数据表，请确认 koishi-plugin-jrys-fix 已启用并完成过签到。";
 }
 
 function getBiasChannelId(session: Session): string {
-  return session.channelId || 'global'
+  return session.channelId || "global";
 }
 
-async function getJrysRecord(ctx: Context, userId: string): Promise<JrysRecord | undefined> {
-  const records = await ctx.database.get('jrys' as any, { name: userId } as any)
-  return records[0] as JrysRecord | undefined
+async function getJrysRecord(
+  ctx: Context,
+  userId: string,
+): Promise<JrysRecord | undefined> {
+  const records = await ctx.database.get(
+    "jrys" as any,
+    { name: userId } as any,
+  );
+  return records[0] as JrysRecord | undefined;
 }
 
 async function setJrysTime(ctx: Context, userId: string, time: Date) {
-  await ctx.database.set('jrys' as any, { name: userId } as any, { time } as any)
+  await ctx.database.set(
+    "jrys" as any,
+    { name: userId } as any,
+    { time } as any,
+  );
 }
 
 function formatRank(rank: number) {
-  return rank > 0 ? `#${rank}` : '无'
+  return rank > 0 ? `#${rank}` : "无";
 }
 
 function formatUser(userId: string, names: Map<string, string>) {
-  const name = names.get(userId)
-  return name ? `${name}(${userId})` : userId
+  const name = names.get(userId);
+  return name ? `${name}(${userId})` : userId;
 }
 
-async function collectCreditData(ctx: Context, config: ResolvedConfig, biasChannelId: string): Promise<CreditData> {
-  const jrysRows = await ctx.database.get('jrys' as any, {} as any) as JrysRecord[]
-  const candidates = [...new Set(jrysRows.map(row => String(row.name)).filter(Boolean))]
-  const bankMetrics = new Map<string, number>()
-  const signMetrics = new Map<string, number>()
-  const biases = new Map<string, number>()
-  const names = new Map<string, string>()
+async function collectCreditData(
+  ctx: Context,
+  config: ResolvedConfig,
+  biasChannelId: string,
+): Promise<CreditData> {
+  const jrysRows = (await ctx.database.get(
+    "jrys" as any,
+    {} as any,
+  )) as JrysRecord[];
+  const candidates = [
+    ...new Set(jrysRows.map((row) => String(row.name)).filter(Boolean)),
+  ];
+  const bankMetrics = new Map<string, number>();
+  const signMetrics = new Map<string, number>();
+  const biases = new Map<string, number>();
+  const names = new Map<string, string>();
 
   for (const row of jrysRows) {
-    const userId = String(row.name)
-    const metric = Number(config.signRankMode === 'signCount' ? row.signCount : row.exp) || 0
-    signMetrics.set(userId, metric)
-    if (row.name) names.set(userId, row.name)
+    const userId = String(row.name);
+    const metric =
+      Number(config.signRankMode === "signCount" ? row.signCount : row.exp) ||
+      0;
+    signMetrics.set(userId, metric);
+    if (row.name) names.set(userId, row.name);
   }
 
-  if (config.enableBankSync && (ctx as any).database.tables?.monetary_bank_int) {
-    const bankRows = await ctx.database.get('monetary_bank_int' as any, { currency: config.currency } as any)
+  // 构建映射：将 Koishi 的内部用户 ID (uid/aid) 转换为平台的 userId
+  const uidToUserId = new Map<number, string>();
+  if ((ctx as any).database.tables?.binding) {
+    const bindings = await (ctx as any).database.get("binding", {});
+    for (const b of bindings as any[]) {
+      const pid = String(b.pid); // 格式如 'onebot:123456789'
+      const aid = Number(b.aid);
+      const platformUserId = pid.includes(":")
+        ? pid.substring(pid.indexOf(":") + 1)
+        : pid;
+      uidToUserId.set(aid, platformUserId);
+    }
+  }
+
+  if (
+    config.enableBankSync &&
+    (ctx as any).database.tables?.monetary_bank_int
+  ) {
+    const bankRows = await ctx.database.get(
+      "monetary_bank_int" as any,
+      { currency: config.currency } as any,
+    );
     for (const row of bankRows as any[]) {
-      const userId = String(row.uid)
-      if (!candidates.includes(userId)) continue
-      bankMetrics.set(userId, (bankMetrics.get(userId) ?? 0) + Number(row.amount ?? 0))
+      const uid = Number(row.uid);
+      // 如果映射不存在，则回退直接使用 uid 字符串防止匹配失败
+      const userId = uidToUserId.get(uid) || String(uid);
+      if (!candidates.includes(userId)) continue;
+      bankMetrics.set(
+        userId,
+        (bankMetrics.get(userId) ?? 0) + Number(row.amount ?? 0),
+      );
     }
   }
 
   if ((ctx as any).database.tables?.monetary_credit_bias) {
-    const biasRows = await ctx.database.get('monetary_credit_bias' as any, { channelId: biasChannelId } as any)
+    const biasRows = await ctx.database.get(
+      "monetary_credit_bias" as any,
+      { channelId: biasChannelId } as any,
+    );
     for (const row of biasRows as any[]) {
-      biases.set(String(row.userId), Number(row.bias ?? 0))
+      biases.set(String(row.userId), Number(row.bias ?? 0));
     }
   }
 
-  return { candidates, bankMetrics, signMetrics, biases, names }
+  return { candidates, bankMetrics, signMetrics, biases, names };
 }
 
 async function getSignExpReward(ctx: Context): Promise<number> {
   try {
-    const jrysFix = (ctx as any).registry?.get?.('jrys-fix')
-    if (jrysFix?.config?.signExp != null) return Number(jrysFix.config.signExp) || 0
+    const jrysFix = (ctx as any).registry?.get?.("jrys-fix");
+    if (jrysFix?.config?.signExp != null)
+      return Number(jrysFix.config.signExp) || 0;
   } catch {}
-  return 0
+  return 0;
 }
 
 export function registerCommands({ ctx, config, logger }: CommandDeps) {
-  ctx.command('resign', '付费补签')
-    .userFields(['id'])
+  ctx
+    .command("resign", "付费补签")
+    .userFields(["id"])
     .action(async ({ session }) => {
-      if (!session) return '无法获取会话信息。'
-      const resolved = getSessionConfig(session, config)
-      if (!resolved.enableResign) return '补签功能未启用。'
-      if (!hasTables(ctx, ['jrys'])) return missingJrysMessage()
+      if (!session) return "无法获取会话信息。";
+      const resolved = getSessionConfig(session, config);
+      if (!resolved.enableResign) return "补签功能未启用。";
+      if (!hasTables(ctx, ["jrys"])) return missingJrysMessage();
 
-      const userId = session.userId
-      if (!userId) return '无法获取用户 ID。'
+      const userId = session.userId;
+      if (!userId) return "无法获取用户 ID。";
 
-      const uid = getSessionUid(session as Session<'id'>)
-      if (uid == null) return '无法获取用户数字 ID。'
+      const uid = getSessionUid(session as Session<"id">);
+      if (uid == null) return "无法获取用户数字 ID。";
 
-      const record = await getJrysRecord(ctx, userId)
-      if (!record) return '没有找到你的签到记录，无法补签。'
-      if (isSameLocalDate(record.time)) return '今天已经签到，不能补签。'
-      if (!isMoreThanOneDayAgo(record.time)) return '上次签到距今不足一天，无法补签。'
+      const record = await getJrysRecord(ctx, userId);
+      if (!record) return "没有找到你的签到记录，无法补签。";
+      if (isSameLocalDate(record.time)) return "今天已经签到，不能补签。";
+      if (!isMoreThanOneDayAgo(record.time))
+        return "上次签到距今不足一天，无法补签。";
 
-      const cost = await costWithBank(ctx as MonetaryLikeContext, uid, resolved.currency, resolved.resignCost, resolved.enableBankSync)
-      if (!cost.success) return cost.error || '补签扣款失败。'
+      const cost = await costWithBank(
+        ctx as MonetaryLikeContext,
+        uid,
+        resolved.currency,
+        resolved.resignCost,
+        resolved.enableBankSync,
+      );
+      if (!cost.success) return cost.error || "补签扣款失败。";
 
       // 触发签到逻辑：增加经验值、累签天数 +1
-      const signExpReward = await getSignExpReward(ctx)
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      yesterday.setHours(12, 0, 0, 0)
+      const signExpReward = await getSignExpReward(ctx);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(12, 0, 0, 0);
 
-      await ctx.database.set('jrys' as any, { name: userId } as any, {
-        exp: (record.exp || 0) + signExpReward,
-        signCount: (record.signCount || 0) + 1,
-        time: yesterday,
-      } as any)
+      await ctx.database.set(
+        "jrys" as any,
+        { name: userId } as any,
+        {
+          exp: (record.exp || 0) + signExpReward,
+          signCount: (record.signCount || 0) + 1,
+          time: yesterday,
+        } as any,
+      );
 
       return resolved.resignCost > 0
         ? `补签成功，已扣除 ${resolved.resignCost} ${resolved.currency}。`
-        : '补签成功。'
-    })
+        : "补签成功。";
+    });
 
-  ctx.command('credit', '查看信用分')
-    .userFields(['id'])
+  ctx
+    .command("credit", "查看信用分")
+    .userFields(["id", "name"])
     .action(async ({ session }) => {
-      if (!session) return '无法获取会话信息。'
-      const resolved = getSessionConfig(session, config)
-      if (!resolved.enableCredit) return '信用分功能未启用。'
-      if (!hasTables(ctx, ['jrys'])) return missingJrysMessage()
+      if (!session) return "无法获取会话信息。";
+      const resolved = getSessionConfig(session, config);
+      if (!resolved.enableCredit) return "信用分功能未启用。";
+      if (!hasTables(ctx, ["jrys"])) return missingJrysMessage();
 
-      const userId = session.userId
-      if (!userId) return '无法获取用户 ID。'
+      const userId = session.userId;
+      if (!userId) return "无法获取用户 ID。";
 
-      const { candidates, bankMetrics, signMetrics, biases } = await collectCreditData(ctx, resolved, getBiasChannelId(session))
-      if (!candidates.includes(userId)) return '没有找到你的签到记录，暂无信用分。'
+      const { candidates, bankMetrics, signMetrics, biases } =
+        await collectCreditData(ctx, resolved, getBiasChannelId(session));
+      if (!candidates.includes(userId))
+        return "没有找到你的签到记录，暂无信用分。";
 
-      const score = computeCreditScores({
+      const scoreData = computeCreditScores({
         candidates,
         bankMetrics,
         signMetrics,
@@ -170,40 +239,65 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
         bankWeight: resolved.bankWeight,
         signWeight: resolved.signWeight,
         creditFormula: resolved.creditFormula,
-      }).find(item => item.userId === userId)
+      }).find((item) => item.userId === userId);
 
-      if (!score) return '暂无信用分数据。'
+      if (!scoreData) return "暂无信用分数据。";
+
+      // 如果环境中存在 puppeteer，返回华丽的可视化图片
+      if (ctx.puppeteer) {
+        const username =
+          session.author?.nickname ||
+          session.author?.username ||
+          session.username ||
+          userId;
+        return await renderCreditImage(ctx, logger, {
+          username,
+          userId,
+          score: scoreData.score,
+          bankRank: scoreData.bankRank,
+          signRank: scoreData.signRank,
+          bankScore: scoreData.bankScore,
+          signScore: scoreData.signScore,
+          bias: scoreData.bias,
+          updateTime: new Date().toLocaleString("zh-CN"),
+        });
+      }
+
+      // 如果未安装 puppeteer，降级为文字
       return [
-        `信用分：${score.score.toFixed(2)}`,
-        `银行排名：${formatRank(score.bankRank)}`,
-        `签到排名：${formatRank(score.signRank)}`,
-      ].join('\n')
-    })
+        `信用分：${scoreData.score.toFixed(2)}`,
+        `银行排名：${formatRank(scoreData.bankRank)}`,
+        `签到排名：${formatRank(scoreData.signRank)}`,
+      ].join("\n");
+    });
 
-  ctx.command('credit.rank', '查看信用分排行')
-    .action(async ({ session }) => {
-      if (!session) return '无法获取会话信息。'
-      const resolved = getSessionConfig(session, config)
-      if (!resolved.enableCredit) return '信用分功能未启用。'
-      if (!hasTables(ctx, ['jrys'])) return missingJrysMessage()
+  ctx.command("credit.rank", "查看信用分排行").action(async ({ session }) => {
+    if (!session) return "无法获取会话信息。";
+    const resolved = getSessionConfig(session, config);
+    if (!resolved.enableCredit) return "信用分功能未启用。";
+    if (!hasTables(ctx, ["jrys"])) return missingJrysMessage();
 
-      const { candidates, bankMetrics, signMetrics, biases, names } = await collectCreditData(ctx, resolved, getBiasChannelId(session))
-      if (candidates.length === 0) return '暂无信用分数据。'
+    const { candidates, bankMetrics, signMetrics, biases, names } =
+      await collectCreditData(ctx, resolved, getBiasChannelId(session));
+    if (candidates.length === 0) return "暂无信用分数据。";
 
-      const scores = computeCreditScores({
-        candidates,
-        bankMetrics,
-        signMetrics,
-        biases,
-        bankWeight: resolved.bankWeight,
-        signWeight: resolved.signWeight,
-        creditFormula: resolved.creditFormula,
-      }).slice(0, resolved.rankLimit)
+    const scores = computeCreditScores({
+      candidates,
+      bankMetrics,
+      signMetrics,
+      biases,
+      bankWeight: resolved.bankWeight,
+      signWeight: resolved.signWeight,
+      creditFormula: resolved.creditFormula,
+    }).slice(0, resolved.rankLimit);
 
-      logger.debug(`credit.rank candidates=${candidates.length}`)
-      return [
-        '信用分排行：',
-        ...scores.map((item, index) => `${index + 1}. ${formatUser(item.userId, names)} - ${item.score.toFixed(2)}（银行${formatRank(item.bankRank)} / 签到${formatRank(item.signRank)}）`),
-      ].join('\n')
-    })
+    logger.debug(`credit.rank candidates=${candidates.length}`);
+    return [
+      "信用分排行：",
+      ...scores.map(
+        (item, index) =>
+          `${index + 1}. ${formatUser(item.userId, names)} - ${item.score.toFixed(2)}（银行${formatRank(item.bankRank)} / 签到${formatRank(item.signRank)}）`,
+      ),
+    ].join("\n");
+  });
 }
