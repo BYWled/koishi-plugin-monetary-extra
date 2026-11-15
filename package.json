@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-monetary-extra",
   "description": "为 monetary 为基础的诸多插件添加扩展功能",
-  "version": "1.0.0-Alpha.1",
+  "version": "1.0.0-alpha.2",
   "homepage": "https://github.com/BYWled/koishi-plugin-monetary-extra",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -13,30 +13,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test --import tsx src/*.test.ts"
-  },
-  "keywords": [
-    "chatbot",
-    "koishi",
-    "plugin"
-  ],
-  "devDependencies": {
-    "tsx": "^4.7.1",
-    "typescript": "^5.0.0"
-  },
-  "peerDependencies": {
-    "koishi": "4.18.11",
-    "koishi-plugin-monetary": "*",
-    "koishi-plugin-jrys-fix": "*",
-    "koishi-plugin-monetary-bank": "*",
-    "koishi-plugin-puppeteer": "*"
-  },
-  "peerDependenciesMeta": {
-    "koishi-plugin-jrys-fix": {
-      "optional": true
-    },
-    "koishi-plugin-monetary-bank": {
-      "optional": true
-    }
   },
   "keywords": [
     "koishi",
@@ -51,5 +27,53 @@
     "签到",
     "信用分",
     "排行榜"
-  ]
+  ],
+  "devDependencies": {
+    "tsx": "^4.23.5",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "koishi": "4.18.11",
+    "koishi-plugin-jrys-fix": "*",
+    "koishi-plugin-monetary": "*",
+    "koishi-plugin-monetary-bank": "*",
+    "koishi-plugin-puppeteer": "*"
+  },
+  "peerDependenciesMeta": {
+    "koishi-plugin-jrys-fix": {
+      "optional": true
+    },
+    "koishi-plugin-monetary-bank": {
+      "optional": true
+    }
+  },
+  "author": {
+    "name": "BYWled",
+    "email": "bywled@qq.com",
+    "url": "https://github.com/BYWled"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BYWled/monetary-extra.git"
+  },
+  "koishi": {
+    "description": {
+      "en": "Extra features for monetary: five-dimension rolling credit score, paid re-sign",
+      "zh": "为 monetary 货币系统提供五维滚动窗口信用分与付费补签"
+    },
+    "service": {
+      "required": [
+        "database",
+        "monetary"
+      ],
+      "optional": [
+        "monetaryBank",
+        "puppeteer"
+      ]
+    }
+  },
+  "publishConfig": {
+    "tag": "alpha",
+    "access": "public"
+  }
 }

@@ -4,10 +4,10 @@ export type CreditDataRenderInput = {
   username: string;
   userId: string;
   score: number;
-  bankRank: number;
-  signRank: number;
-  bankScore: number;
-  signScore: number;
+  activityScore: number;
+  assetScore: number;
+  participationScore: number;
+  interactionScore: number;
   bias: number;
   updateTime: string;
 };
@@ -20,7 +20,7 @@ const creditTemplateHtml = `
   <meta charset="utf-8">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap');
-    
+
     :root {
       --bg: #0c0f15;
       --card: #161b22;
@@ -28,140 +28,156 @@ const creditTemplateHtml = `
       --text-sub: #8b949e;
       --border: #30363d;
     }
-    
+
     body {
-      margin: 0; 
-      padding: 32px; 
+      margin: 0;
+      padding: 32px;
       font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-      background: var(--bg); 
-      width: 420px; 
-      box-sizing: border-box; 
+      background: var(--bg);
+      width: 420px;
+      box-sizing: border-box;
       color: var(--text-main);
     }
-    
+
     .card {
-      background: var(--card); 
-      padding: 32px; 
+      background: var(--card);
+      padding: 32px;
       border-radius: 16px;
-      border: 1px solid var(--border); 
+      border: 1px solid var(--border);
       box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
-      display: flex; 
-      flex-direction: column; 
-      align-items: center; 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       position: relative;
     }
-    
-    .header { 
-      align-self: flex-start; 
-      width: 100%; 
-      display: flex; 
-      align-items: center; 
-      gap: 12px; 
-      margin-bottom: 24px; 
-    }
-    
-    .avatar { 
-      width: 48px; 
-      height: 48px; 
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6); 
-      border-radius: 12px; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      font-weight: bold; 
-      font-size: 20px;
-    }
-    
-    .user-info { flex: 1; }
-    
-    .username { 
-      font-size: 18px; 
-      font-weight: bold; 
-      margin-bottom: 4px; 
-    }
-    
-    .uid { 
-      font-size: 12px; 
-      color: var(--text-sub); 
+
+    .header {
+      align-self: flex-start;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
     }
 
-    .gauge-container { 
-      position: relative; 
-      width: 280px; 
-      height: 154px; 
-      margin: 10px 0; 
-      display: flex; 
-      justify-content: center; 
-      overflow: hidden; 
+    .avatar {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 20px;
     }
-    
-    .gauge-svg { 
+
+    .user-info { flex: 1; }
+
+    .username {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .uid {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .gauge-container {
+      position: relative;
+      width: 280px;
+      height: 154px;
+      margin: 10px 0;
+      display: flex;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .gauge-svg {
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%; 
-      height: 100%; 
+      width: 100%;
+      height: 100%;
     }
-    
-    .score-display { 
-      position: absolute; 
-      bottom: 22px; 
-      text-align: center; 
-      width: 100%; 
+
+    .score-display {
+      position: absolute;
+      bottom: 22px;
+      text-align: center;
+      width: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
-    
-    .score-value { 
-      font-size: 48px; 
-      font-weight: 700; 
-      line-height: 1; 
-      margin-bottom: 4px; 
+
+    .score-value {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
       font-family: 'Roboto Mono', sans-serif;
     }
-    
-    .score-label { 
-      font-size: 14px; 
-      color: var(--text-sub); 
-      font-weight: 500; 
+
+    .score-label {
+      font-size: 14px;
+      color: var(--text-sub);
+      font-weight: 500;
     }
 
-    .stats { 
-      display: flex; 
-      width: 100%; 
-      gap: 16px; 
-      margin-top: 24px; 
+    .dimensions {
+      width: 100%;
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
-    
-    .stat-box { 
-      flex: 1; 
-      background: rgba(255, 255, 255, 0.03); 
-      border: 1px solid var(--border); 
-      border-radius: 12px; 
-      padding: 16px; 
-      text-align: center; 
+
+    .dim-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    
-    .stat-value { 
-      font-size: 24px; 
-      font-weight: bold; 
-      margin-bottom: 4px; 
+
+    .dim-label {
+      width: 72px;
+      font-size: 12px;
+      color: var(--text-sub);
+      flex-shrink: 0;
+    }
+
+    .dim-bar {
+      flex: 1;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .dim-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: #3b82f6;
+      width: 0%;
+    }
+
+    .dim-value {
+      width: 42px;
+      text-align: right;
+      font-size: 12px;
       font-family: 'Roboto Mono', sans-serif;
-    }
-    
-    .stat-label { 
-      font-size: 12px; 
-      color: var(--text-sub); 
+      flex-shrink: 0;
     }
 
-    .footer { 
-      margin-top: 24px; 
-      font-size: 11px; 
-      color: var(--text-sub); 
-      opacity: 0.6; 
-      text-align: center; 
-      width: 100%; 
+    .footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--text-sub);
+      opacity: 0.6;
+      text-align: center;
+      width: 100%;
     }
   </style>
 </head>
@@ -186,34 +202,44 @@ const creditTemplateHtml = `
       </div>
     </div>
 
-    <div class="stats">
-      <div class="stat-box">
-        <div class="stat-value" id="bank-rank">-</div>
-        <div class="stat-label">银行排名</div>
+    <div class="dimensions">
+      <div class="dim-row">
+        <div class="dim-label">签到活性</div>
+        <div class="dim-bar"><div class="dim-fill" id="bar-activity"></div></div>
+        <div class="dim-value" id="val-activity">-</div>
       </div>
-      <div class="stat-box">
-        <div class="stat-value" id="sign-rank">-</div>
-        <div class="stat-label">签到排名</div>
+      <div class="dim-row">
+        <div class="dim-label">资产稳健</div>
+        <div class="dim-bar"><div class="dim-fill" id="bar-asset"></div></div>
+        <div class="dim-value" id="val-asset">-</div>
+      </div>
+      <div class="dim-row">
+        <div class="dim-label">经济参与</div>
+        <div class="dim-bar"><div class="dim-fill" id="bar-participation"></div></div>
+        <div class="dim-value" id="val-participation">-</div>
+      </div>
+      <div class="dim-row">
+        <div class="dim-label">社交活跃</div>
+        <div class="dim-bar"><div class="dim-fill" id="bar-interaction"></div></div>
+        <div class="dim-value" id="val-interaction">-</div>
       </div>
     </div>
 
     <div class="footer" id="footer"></div>
   </div>
-  
+
   <script>
     const DATA = {{DATA}};
-    
+
     document.getElementById('username').textContent = DATA.username;
     document.getElementById('avatar-text').textContent = DATA.username.substring(0, 1).toUpperCase();
     document.getElementById('userid').textContent = 'ID: ' + DATA.userId;
-    document.getElementById('bank-rank').textContent = DATA.bankRank > 0 ? '#' + DATA.bankRank : '暂无';
-    document.getElementById('sign-rank').textContent = DATA.signRank > 0 ? '#' + DATA.signRank : '暂无';
     document.getElementById('footer').textContent = '数据评估时间 ' + DATA.updateTime;
 
     // 信用等级评价与动态颜色逻辑
     let evalText = '信用极好';
     let color = '#10b981'; // 绿色
-    
+
     if (DATA.score < 20) {
       evalText = '信用较差';
       color = '#ef4444'; // 红色
@@ -226,21 +252,34 @@ const creditTemplateHtml = `
     }
 
     document.getElementById('evaluation').textContent = evalText;
-    
+
     const scoreEl = document.getElementById('score');
     scoreEl.textContent = Math.floor(DATA.score);
     scoreEl.style.color = color;
-    
+
     const progressEl = document.getElementById('progress');
     progressEl.style.stroke = color;
 
     // 动态调整仪表盘半圆环的填充率 (满分为 100 理论值，超出会被 limit 到 1)
     const maxExpectedScore = 100;
     const percentage = Math.min(Math.max(DATA.score / maxExpectedScore, 0), 1);
-    
+
     // 弧长 = PI * r = 3.14159 * 70 = 219.91
     const dashoffset = 219.91 * (1 - percentage);
     progressEl.style.strokeDashoffset = dashoffset;
+
+    // 四维分进度条
+    const dims = [
+      { bar: 'bar-activity', val: 'val-activity', score: DATA.activityScore },
+      { bar: 'bar-asset', val: 'val-asset', score: DATA.assetScore },
+      { bar: 'bar-participation', val: 'val-participation', score: DATA.participationScore },
+      { bar: 'bar-interaction', val: 'val-interaction', score: DATA.interactionScore },
+    ];
+    for (const dim of dims) {
+      const pct = Math.min(Math.max(dim.score / 100, 0), 1) * 100;
+      document.getElementById(dim.bar).style.width = pct + '%';
+      document.getElementById(dim.val).textContent = Math.floor(dim.score);
+    }
   </script>
 </body>
 </html>
