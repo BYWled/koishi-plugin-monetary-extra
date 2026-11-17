@@ -2,6 +2,15 @@
 
 本项目的所有关键更改都将记录在此文件中。
 
+### [Alpha.3]
+
+#### 🐛 Bug Fixes (漏洞修复)
+
+- **jrys/binding**: 修复在真实聊天平台（如 OneBot）中，因用户昵称写入 `jrys.name`（形如 `@昵称`）导致 `credit` 与 `resign` 获取不到签到记录的缺陷。通过 Koishi 内部 `uid`/`aid` 与 `binding` 表精准对齐平台 `userId` 与签到数据。
+- **credit**: 修复由于候选人名单与资产/参与度/社交活跃度字典键名不一致（昵称 vs 平台 userId），导致其余四维度行为分归零的问题。
+- **resign**: 补签数据写回统一按主键 `id` 更新，彻底防止按非唯一昵称写回落空。
+- **credit.diagnose**: 诊断指令支持同时通过平台数字 ID、`<at>` 艾特以及用户群昵称反查用户明细。
+
 ### [Alpha.2]
 
 #### 💥 Breaking Changes (破坏性变更)

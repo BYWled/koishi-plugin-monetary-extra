@@ -68,7 +68,25 @@ function getBiasChannelId(session: Session): string {
 async function getJrysRecord(
   ctx: Context,
   userId: string,
+  uid?: number | null,
 ): Promise<JrysRecord | undefined> {
+  // 1. 优先通过 jrys 表的主键 id（即 Koishi 内部 uid / aid）查询
+  if (uid != null) {
+    const byId = await ctx.database.get("jrys" as any, { id: uid } as any);
+    if (byId[0]) return byId[0] as JrysRecord | undefined;
+  }
+  // 2. 尝试从 binding 表反查 uid 并匹配 jrys.id
+  if (hasTable(ctx, "binding")) {
+    const bindings = await (ctx as any).database.get("binding", { pid: userId });
+    for (const b of bindings as any[]) {
+      const aid = Number(b.aid);
+      if (Number.isFinite(aid)) {
+        const byAid = await ctx.database.get("jrys" as any, { id: aid } as any);
+        if (byAid[0]) return byAid[0] as JrysRecord | undefined;
+      }
+    }
+  }
+  // 3. 兼容历史以平台 userId 或 '@userId' 存入 name 的情况
   const records = await ctx.database.get(
     "jrys" as any,
     { name: userId } as any,
@@ -82,17 +100,25 @@ async function getJrysRecord(
   return fallback[0] as JrysRecord | undefined;
 }
 
-async function setJrysTime(ctx: Context, userId: string, time: Date) {
-  await ctx.database.set(
-    "jrys" as any,
-    { name: userId } as any,
-    { time } as any,
-  );
-  await ctx.database.set(
-    "jrys" as any,
-    { name: `@${userId}` } as any,
-    { time } as any,
-  );
+async function setJrysTime(ctx: Context, idOrUserId: number | string, time: Date) {
+  if (typeof idOrUserId === "number") {
+    await ctx.database.set(
+      "jrys" as any,
+      { id: idOrUserId } as any,
+      { time } as any,
+    );
+  } else {
+    await ctx.database.set(
+      "jrys" as any,
+      { name: idOrUserId } as any,
+      { time } as any,
+    );
+    await ctx.database.set(
+      "jrys" as any,
+      { name: `@${idOrUserId}` } as any,
+      { time } as any,
+    );
+  }
 }
 
 function formatUser(userId: string, names: Map<string, string>) {
@@ -148,34 +174,42 @@ async function collectCreditData(
   config: ResolvedConfig,
   biasChannelId: string,
 ): Promise<CreditData> {
+  const uidToUserId = await buildUidToUserIdMap(ctx);
+
   const jrysRows = (await ctx.database.get(
     "jrys" as any,
     {} as any,
   )) as JrysRecord[];
-  const candidates = [
-    ...new Set(
-      jrysRows
-        .map((row) => normalizeJrysName(String(row.name)))
-        .filter(Boolean),
-    ),
-  ];
 
+  const candidates: string[] = [];
   const signData = new Map<string, { signCount: number; lastSignAt: Date | null }>();
   const names = new Map<string, string>();
   for (const row of jrysRows) {
-    const rawName = String(row.name);
-    const userId = normalizeJrysName(rawName);
+    const aid = Number(row.id);
+    const rawName = String(row.name ?? "");
+    const cleanName = normalizeJrysName(rawName);
+    // 优先通过 binding 将 jrys.id（即 aid/uid）转换为平台 userId（如 QQ号）
+    // 若 binding 中不存在，则退回使用 cleanName 或 aid 字符串（兼容沙盒测试或无 binding 环境）
+    const userId = (Number.isFinite(aid) ? uidToUserId.get(aid) : null) || cleanName || String(row.id);
     if (!userId) continue;
+
+    if (!candidates.includes(userId)) {
+      candidates.push(userId);
+    }
     if (!signData.has(userId)) {
       signData.set(userId, {
         signCount: Number(row.signCount ?? 0),
         lastSignAt: row.time ? new Date(row.time) : null,
       });
     }
-    names.set(userId, rawName);
-  }
 
-  const uidToUserId = await buildUidToUserIdMap(ctx);
+    const displayName = cleanName || rawName;
+    if (displayName && displayName !== userId) {
+      names.set(userId, displayName);
+    } else if (rawName) {
+      names.set(userId, rawName);
+    }
+  }
 
   // 资产 = 现金 + 银行（活期 + 定期）
   const assetTotals = new Map<string, number>();
@@ -335,7 +369,7 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
       const uid = getSessionUid(session as Session<"id">);
       if (uid == null) return "无法获取用户数字 ID。";
 
-      const record = await getJrysRecord(ctx, userId);
+      const record = await getJrysRecord(ctx, userId, uid);
       if (!record) return "没有找到你的签到记录，无法补签。";
       if (isSameLocalDate(record.time)) return "今天已经签到，不能补签。";
       if (!isMoreThanOneDayAgo(record.time))
@@ -351,7 +385,7 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
       if (!cost.success) return cost.error || "补签扣款失败。";
 
       // 触发签到逻辑：增加经验值、累签天数 +1
-      // 注意：jrys-fix 的 name 可能是 '@昵称' 格式，必须按查到的记录实际 name 写回
+      // 必须按主键 id 写回数据库，防止 name 为昵称时更新落空
       const signExpReward = await getSignExpReward(ctx);
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -359,7 +393,7 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
 
       await ctx.database.set(
         "jrys" as any,
-        { name: record.name } as any,
+        { id: record.id } as any,
         {
           exp: (record.exp || 0) + signExpReward,
           signCount: (record.signCount || 0) + 1,
@@ -455,10 +489,19 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
 
       const atMatch = [...user.matchAll(/<at[^>]*\bid=["']?([^"'\s/>]+)["']?[^>]*\/?>/g)];
       const rawTarget = atMatch[0]?.[1] ?? user.replace(/<[^>]+>/g, "").trim();
-      const targetId = normalizeJrysName(rawTarget);
+      let targetId = normalizeJrysName(rawTarget);
       if (!targetId) return "无法解析目标用户。";
 
       const data = await collectCreditData(ctx, resolved, getBiasChannelId(session));
+      if (!data.candidates.includes(targetId)) {
+        // 如果输入的是昵称，尝试通过 names 反查平台 userId
+        for (const [candUserId, candName] of data.names) {
+          if (candName === targetId || normalizeJrysName(candName) === targetId) {
+            targetId = candUserId;
+            break;
+          }
+        }
+      }
       if (!data.candidates.includes(targetId))
         return "该用户没有签到记录，暂无信用分。";
 
