@@ -13,7 +13,10 @@ export interface CostResult {
 }
 
 export function hasTable(ctx: { database: any }, tableName: string): boolean {
-  return Boolean((ctx.database as any).tables?.[tableName])
+  return Boolean(
+    (ctx.database as any)?.tables?.[tableName] ||
+    (ctx as any)?.model?.tables?.[tableName]
+  )
 }
 
 export function hasTables(ctx: { database: any }, tableNames: string[]): boolean {

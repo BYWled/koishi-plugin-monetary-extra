@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-monetary-extra",
   "description": "为 monetary 为基础的诸多插件添加扩展功能",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "homepage": "https://github.com/BYWled/koishi-plugin-monetary-extra",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

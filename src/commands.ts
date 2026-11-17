@@ -129,7 +129,7 @@ function formatUser(userId: string, names: Map<string, string>) {
 /** 构建 Koishi 内部 uid（aid）→ 平台 userId 的映射 */
 async function buildUidToUserIdMap(ctx: Context): Promise<Map<number, string>> {
   const uidToUserId = new Map<number, string>();
-  if (!(ctx as any).database.tables?.binding) return uidToUserId;
+  if (!hasTable(ctx, "binding")) return uidToUserId;
   const bindings = await (ctx as any).database.get("binding", {});
   for (const b of bindings as any[]) {
     // binding 以 platform / pid 两列分别存储平台与平台用户 ID，pid 即平台 userId
@@ -256,12 +256,36 @@ async function collectCreditData(
     const now = new Date();
     const daysIntoMonth = now.getDate();
     const counterRows = await ctx.database.get("message_counter_records", {} as any);
+    const userMonthlyTotals = new Map<string, number>();
+
     for (const row of counterRows as any[]) {
-      const userId = String(row.userId);
-      if (!candidates.includes(userId)) continue;
+      const rawUserId = String(row.userId);
+      const mappedUserId = Number.isFinite(Number(rawUserId))
+        ? (uidToUserId.get(Number(rawUserId)) ?? rawUserId)
+        : rawUserId;
+
+      let targetUserId: string | null = null;
+      if (candidates.includes(rawUserId)) {
+        targetUserId = rawUserId;
+      } else if (mappedUserId && candidates.includes(mappedUserId)) {
+        targetUserId = mappedUserId;
+      }
+      if (!targetUserId) continue;
+
+      let count = Number(row.thisMonthPostCount ?? 0);
+      if (daysIntoMonth === 1 && count === 0) {
+        count = Number(row.yesterdayPostCount ?? 0);
+      }
+      userMonthlyTotals.set(
+        targetUserId,
+        (userMonthlyTotals.get(targetUserId) ?? 0) + count,
+      );
+    }
+
+    for (const [userId, totalCount] of userMonthlyTotals) {
       interactionDailyAvg.set(
         userId,
-        Number(row.thisMonthPostCount ?? 0) / Math.max(1, daysIntoMonth),
+        totalCount / Math.max(1, daysIntoMonth),
       );
     }
     interactionSource = interactionDailyAvg.size > 0 ? 'msgcount' : 'none';
@@ -272,11 +296,22 @@ async function collectCreditData(
     });
     if (snapshotRows.length > 0) {
       for (const row of snapshotRows as any[]) {
-        const userId = String(row.userId);
-        if (!candidates.includes(userId)) continue;
+        const rawUserId = String(row.userId);
+        const mappedUserId = Number.isFinite(Number(rawUserId))
+          ? (uidToUserId.get(Number(rawUserId)) ?? rawUserId)
+          : rawUserId;
+
+        let targetUserId: string | null = null;
+        if (candidates.includes(rawUserId)) {
+          targetUserId = rawUserId;
+        } else if (mappedUserId && candidates.includes(mappedUserId)) {
+          targetUserId = mappedUserId;
+        }
+        if (!targetUserId) continue;
+
         interactionDailyAvg.set(
-          userId,
-          (interactionDailyAvg.get(userId) ?? 0) + Number(row.count ?? 0),
+          targetUserId,
+          (interactionDailyAvg.get(targetUserId) ?? 0) + Number(row.count ?? 0),
         );
       }
       for (const [userId, total] of interactionDailyAvg) {
@@ -292,7 +327,20 @@ async function collectCreditData(
       channelId: biasChannelId,
     } as any);
     for (const row of biasRows as any[]) {
-      biases.set(String(row.userId), Number(row.bias ?? 0));
+      const rawUserId = String(row.userId);
+      const mappedUserId = Number.isFinite(Number(rawUserId))
+        ? (uidToUserId.get(Number(rawUserId)) ?? rawUserId)
+        : rawUserId;
+
+      let targetUserId: string | null = null;
+      if (candidates.includes(rawUserId)) {
+        targetUserId = rawUserId;
+      } else if (mappedUserId && candidates.includes(mappedUserId)) {
+        targetUserId = mappedUserId;
+      }
+      if (targetUserId) {
+        biases.set(targetUserId, Number(row.bias ?? 0));
+      }
     }
   }
 
@@ -499,6 +547,17 @@ export function registerCommands({ ctx, config, logger }: CommandDeps) {
           if (candName === targetId || normalizeJrysName(candName) === targetId) {
             targetId = candUserId;
             break;
+          }
+        }
+      }
+      if (!data.candidates.includes(targetId)) {
+        // 如果输入的是数字 aid/uid，尝试通过 binding 查平台 userId
+        const aid = Number(targetId);
+        if (Number.isFinite(aid)) {
+          const uidToUserId = await buildUidToUserIdMap(ctx);
+          const mapped = uidToUserId.get(aid);
+          if (mapped && data.candidates.includes(mapped)) {
+            targetId = mapped;
           }
         }
       }

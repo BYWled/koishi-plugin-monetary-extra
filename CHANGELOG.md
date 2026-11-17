@@ -2,6 +2,16 @@
 
 本项目的所有关键更改都将记录在此文件中。
 
+### [Alpha.4]
+
+#### 🐛 Bug Fixes (漏洞修复)
+
+- **credit/interaction**: 修复 `message-counter`（聊天统计）多频道记录覆盖缺陷。`message_counter_records` 表以 `(channelId, userId)` 为复合主键，原逻辑在多频道/私聊循环中直接覆盖赋值，导致活跃群发言被未发言的群或私聊记录覆盖为 0；现修复为按用户全频道累加当月发言总数，正确计算日均发言量与社交活跃分。
+- **credit/interaction**: 针对每月首日发言统计做鲁棒处理，当月首日且当月计数为 0 时平滑回退至昨日统计，避免月初重置瞬间活跃度归零。
+- **credit/binding**: 统一社交活跃、快照统计与频道偏置的 ID 兼容匹配逻辑，支持平台数字 ID 与内部 aid/uid 的双向对齐，并在 `credit.diagnose` 中补充数字 ID 反查。
+- **services/hasTable**: 增强数据表探测韧性（增加 `ctx.model?.tables` 回退），防止上下文作用域差异导致的误判。
+- **render**: 优化信用分仪表盘与各维度分数的显示舍入，使用 `Math.round` 避免微小分值直接显示为 0。
+
 ### [Alpha.3]
 
 #### 🐛 Bug Fixes (漏洞修复)

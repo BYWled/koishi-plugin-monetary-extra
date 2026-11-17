@@ -254,7 +254,7 @@ const creditTemplateHtml = `
     document.getElementById('evaluation').textContent = evalText;
 
     const scoreEl = document.getElementById('score');
-    scoreEl.textContent = Math.floor(DATA.score);
+    scoreEl.textContent = Math.round(DATA.score);
     scoreEl.style.color = color;
 
     const progressEl = document.getElementById('progress');
@@ -278,7 +278,7 @@ const creditTemplateHtml = `
     for (const dim of dims) {
       const pct = Math.min(Math.max(dim.score / 100, 0), 1) * 100;
       document.getElementById(dim.bar).style.width = pct + '%';
-      document.getElementById(dim.val).textContent = Math.floor(dim.score);
+      document.getElementById(dim.val).textContent = Math.round(dim.score);
     }
   </script>
 </body>
